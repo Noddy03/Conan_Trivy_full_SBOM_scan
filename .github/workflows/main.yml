@@ -31,14 +31,11 @@ jobs:
           repository: ${{ inputs.src_repository }}
           ref: ${{ inputs.src_branch }}
     
-      - name: Generate SBOM using cdxgen container
+      - name: Setting up conan 
         run: |
-          docker run --rm \
-            -v "$(pwd)":/app:rw \
-            -v /tmp:/tmp \
-            -t ghcr.io/cyclonedx/cdxgen:latest \
-            -r /app -o /tmp/sbom.json -t ${{ inputs.src_type }} \
-            --profile ${{ inputs.src_profile }} --json-pretty
+          conan install . --build=missing
+          conan lock create conanfile.py --lockfile-out=conan.lock
+          manifest-cli sbom --name=cpp --version=0.0.0-dev --generator=trivy -vvv -f trivy-sbom.json .
         
       - name: Scan SBOM with trivy
         run: |
