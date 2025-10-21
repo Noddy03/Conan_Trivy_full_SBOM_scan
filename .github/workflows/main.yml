@@ -41,7 +41,7 @@ jobs:
 
       - name: Conan Install (project dir) 
         working-directory: ${{ github.workflows }}
-        run: conan install . --install-folder=build --build=missing
+        run: conan install .  --output-folder=build
       - name: Setting up conan 
         run: |
           conan install . 
