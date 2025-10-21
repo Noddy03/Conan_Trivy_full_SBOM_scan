@@ -39,7 +39,8 @@ jobs:
     
       - name: Setting up conan 
         run: |
-          
+          conan install . --file conanfile.py
+          working-directory: ${{ github.workspace }}
           conan lock create conanfile.py --lockfile-out=conan.lock
           manifest-cli sbom --name=cpp --version=0.0.0-dev --generator=cdxgen -vvv -f cdxgen-sbom.json 
         
