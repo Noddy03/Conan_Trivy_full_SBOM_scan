@@ -40,13 +40,9 @@ jobs:
         run: python -m pip install --upgrade pip && pip install conan 
 
       - name: Conan Install (project dir) 
-        working-directory: ${{ github.workflows }}
-        run: conan install .  --output-folder=build
-      - name: Setting up conan 
-        run: |
+        working-directory: ${{ github.workflows }}|
           conan install . 
           conan lock create conanfile.py --lockfile-out=conan.lock
-          working-directory: ${{ github.workspace }}
           manifest-cli sbom --name=cpp --version=0.0.0-dev --generator=cdxgen -vvv -f cdxgen-sbom.json 
         
       - name: Scan SBOM with trivy
