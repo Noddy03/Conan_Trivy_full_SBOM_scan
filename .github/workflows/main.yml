@@ -41,7 +41,7 @@ jobs:
 
       - name: Conan Install (project dir) 
         run: | 
-          working-directory: ${{ github.workflows }}
+         
           
           manifest-cli sbom --name=cpp --version=0.0.0-dev --generator=cdxgen -vvv -f cdxgen-sbom.json .
         
