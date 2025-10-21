@@ -48,6 +48,8 @@ jobs:
         with:
           path: self
 
+      - name: Conan profile detect
+        run: conan profile detect --force
 
       - name: Generate Conan lockfile
         run: conan lock create conanfile.py --lockfile-out=../conan.lock
