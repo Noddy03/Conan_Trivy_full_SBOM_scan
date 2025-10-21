@@ -25,9 +25,9 @@ jobs:
       actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
     steps:
       - name: Install Python
-        uses: action/setup-python@v4 
+        uses: actions/setup-python@v4 
         with: 
-          python-version: '3.x'
+          python-version: '3.10'
       - name: Install Conan 
         run: pip install conan
         
