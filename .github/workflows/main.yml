@@ -41,9 +41,12 @@ jobs:
 
       - name: Conan Install (project dir) 
         run: | 
-         
+           npm install -g @cyclonedx/cdxgen
+      - name: Generate Conan lockfile
+        run: conan lock create conanfile.py --lockfile-out=conan.lock
           
-           sbom --name=cpp --version=0.0.0-dev --generator=cdxgen -vvv -f cdxgen-sbom.json .
+      - name: Generate SBOM
+        run: cdxgen -t cpp -o sbom.json .
         
       - name: Scan SBOM with trivy
         run: |
