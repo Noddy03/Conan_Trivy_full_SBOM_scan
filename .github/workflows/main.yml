@@ -84,5 +84,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifactname.outputs.out_name }}
-          path: /tmp/*.json
+          path: project-src/trivy-report-cdxgen-src.json
           if-no-files-found: warn
+
