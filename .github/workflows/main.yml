@@ -45,7 +45,7 @@ jobs:
 
       - name: Generate Conan lockfile
         run: conan lock create conanfile.py --lockfile-out=conan.lock
-  
+        working-directory: self
 
       - name: Generate SBOM
         run: cdxgen -t cpp -o sbom.json .
