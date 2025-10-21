@@ -32,7 +32,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ inputs.src_repository }}
+          repository: ${{ inputs.src_repository }} 
           ref: ${{ inputs.src_branch }}
           
           
