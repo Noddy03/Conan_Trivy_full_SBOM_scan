@@ -34,8 +34,7 @@ jobs:
         with:
           repository: ${{ inputs.src_repository }} 
           ref: ${{ inputs.src_branch }}
-      - name: List contents of project-SBOM_test_with_conan_cpp
-        run: ls -la project-SBOM_test_with_conan_cpp
+      
   
           
       - name: Install Conan 
@@ -46,7 +45,7 @@ jobs:
            npm install -g @cyclonedx/cdxgen
     
       - name: Generate Conan lockfile in current directory 
-        run: conan lock create project-SBOM_test_with_conan_cpp/conanfile.py --lockfile-out=conan.lock
+        run: conan lock create project-Noddy03/SBOM_test_with_conan_cpp/conanfile.py --lockfile-out=conan.lock
 
       - name: Generate SBOM in input directory
         run: cdxgen -t cpp -o sbom.json .
