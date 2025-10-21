@@ -46,6 +46,7 @@ jobs:
     
       - name: Generate Conan lockfile in current directory 
         run: conan lock create project-Noddy03/SBOM_test_with_conan_cpp/conanfile.py --lockfile-out=conan.lock
+        working-directory: project-Noddy03/SBOM_test_with_conan_cpp
 
       - name: Generate SBOM in input directory
         run: cdxgen -t cpp -o sbom.json .
