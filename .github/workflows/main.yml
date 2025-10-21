@@ -60,16 +60,16 @@ jobs:
         run: cdxgen -t cpp -o sbom.json .
         working-directory: project-src
 
-      - name: Scan SBOM with Trivy
+      - name: Scan SBOM with trivy
         run: |
-          docker run --rm \
-            -v "$(pwd)":/app:rw \
-            -v /tmp:/tmp \
-            -t docker.io/aquasec/trivy:latest sbom \
-            --format "cyclonedx" \
-            --scanners vuln,license \
-            --output /tmp/trivy-report-cdxgen-src.json \
-            /tmp/sbom.json
+         docker run --rm \
+         -v "$(pwd)":/app:rw \
+         -t docker.io/aquasec/trivy:latest sbom \
+         --format "cyclonedx" \
+         --scanners vuln,license \
+         --output /app/trivy-report-cdxgen-src.json \
+         /app/sbom.json
+
 
       - name: Artifact name
         id: artifactname
