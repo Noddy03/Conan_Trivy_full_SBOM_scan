@@ -59,8 +59,8 @@ jobs:
         working-directory: self
 
 
-      - name: Generate SBOM
-        run: cdxgen -t cpp -o sbom.json .
+      - name: Generate CocoaPods SBOM
+        run: cdxgen -t cocoapods -o sbom.json .
         working-directory: project-src
 
       - name: Scan SBOM with Trivy
