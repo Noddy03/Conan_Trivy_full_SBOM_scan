@@ -57,21 +57,24 @@ jobs:
       - name: Generate Conan lockfile
         run: conan lock create conanfile.py --lockfile-out=../conan.lock
         working-directory: self
-
-
+    
       - name: Generate CocoaPods SBOM
         run: cdxgen -t cocoapods -o sbom.json .
         working-directory: project-src
 
+      - name: Verify SBOM file exists
+        run: ls -l project-src/sbom.json
+
       - name: Scan SBOM with Trivy
         run: |
-            docker run --rm \
-            -v "${{ github.workspace }}/project-src":/app:rw \
-            -t aquasec/trivy:latest sbom \
-            --format "cyclonedx" \
-            --scanners vuln,license \
-            --output /app/trivy-report-cdxgen-src.json \
-            /app/sbom.json
+          docker run --rm \
+          -v "${{ github.workspace }}/project-src":/app:rw \
+          -t aquasec/trivy:latest sbom \
+          --format "cyclonedx" \
+          --scanners vuln,license \
+          --output /app/trivy-report-cdxgen-src.json \
+          /app/sbom.json
+
 
 
 
