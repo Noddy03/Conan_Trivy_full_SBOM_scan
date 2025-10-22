@@ -55,8 +55,9 @@ jobs:
         run: conan profile detect --force
 
       - name: Generate Conan lockfile
-        run: conan lock create conanfile.py --lockfile-out=../conan.lock
-        working-directory: self
+        run: conan lock create conanfile.py --lockfile-out=conan.lock
+        working-directory: project-src
+
 
       - name: List files in project-src
         run: ls -al project-src
