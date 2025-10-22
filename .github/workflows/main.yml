@@ -19,6 +19,10 @@ on:
         description: "Version of the generated BOM"
         default: "1"
         required: false
+      version:
+        description: "Version of cyclonedx-cocoapods to be used"
+        default: "1.1.1"
+        required: false
 
 jobs:
   build:
