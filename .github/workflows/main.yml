@@ -55,6 +55,9 @@ jobs:
         run: conan profile detect --force
       - name: Debug conanfile location
         run: find project-src -name "conanfile.py"
+      - name: Debug: list all files
+        run: find project-src
+
 
 
       - name: Generate Conan lockfile
