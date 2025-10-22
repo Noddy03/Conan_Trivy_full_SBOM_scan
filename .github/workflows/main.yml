@@ -64,11 +64,6 @@ jobs:
       - name: Check cdxgen version
         run: cdxgen --version
 
-      - name: Generate CocoaPods SBOM with verbose logging
-        run: cdxgen -t cpp -o sbom.json .
-
-        working-directory: project-src
-
     
       - name: Generate SBOM
         run: |
