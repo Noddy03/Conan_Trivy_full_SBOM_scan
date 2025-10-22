@@ -15,14 +15,8 @@ on:
         description: 'Project Type (java, python, dotnet,cpp,c++) see https://cyclonedx.github.io/cdxgen/#/PROJECT_TYPES'
         required: false
         default: 'cpp'
-      bom_version:
-        description: "Version of the generated BOM"
-        default: "1"
-        required: false
-      version:
-        description: "Version of cyclonedx-cocoapods to be used"
-        default: "1.1.1"
-        required: false
+     
+    
 
 jobs:
   build:
@@ -45,11 +39,12 @@ jobs:
           ref: ${{ inputs.src_branch }}
           path: project-src
 
-      - name: Install Conan and cdxgen
+      - name: Install Conan, cyclonedx-python-lib and cdxgen
         run: |
-          python -m pip install --upgrade pip
-          pip install cyclonedx-cocoapods -v ${{ inputs.version }}
-          npm install -g @cyclonedx/cdxgen
+              python -m pip install --upgrade pip
+              pip install conan cyclonedx-python-lib
+              npm install -g @cyclonedx/cdxgen
+
 
       - name: Checkout workflow repository (self)
         uses: actions/checkout@v4
