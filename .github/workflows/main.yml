@@ -57,10 +57,30 @@ jobs:
       - name: Generate Conan lockfile
         run: conan lock create conanfile.py --lockfile-out=../conan.lock
         working-directory: self
-    
-      - name: Generate CocoaPods SBOM
-        run: cdxgen -t cocoapods -o sbom.json .
+
+      - name: List files in project-src
+        run: ls -al project-src
+
+      - name: Check cdxgen version
+        run: cdxgen --version
+
+      - name: Generate CocoaPods SBOM with verbose logging
+        run: cdxgen -t cocoapods -o sbom.json . --verbose
         working-directory: project-src
+
+    
+      - name: Generate SBOM
+        run: |
+          if [ "${{ inputs.src_type }}" == "cocoapods" ]; then
+          cdxgen -t cocoapods -o sbom.json .
+          elif [ "${{ inputs.src_type }}" == "cpp" ]; then
+          cdxgen -t cpp -o sbom.json .
+          else
+          echo "Unsupported src_type: ${{ inputs.src_type }}"
+          exit 1
+          fi
+        working-directory: project-src
+
 
       - name: Verify SBOM file exists
         run: ls -l project-src/sbom.json
