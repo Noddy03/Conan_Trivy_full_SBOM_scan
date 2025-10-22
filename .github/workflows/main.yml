@@ -65,14 +65,14 @@ jobs:
 
       - name: Scan SBOM with Trivy
         run: |
-         docker run --rm \
-          -v "$(pwd)":/app:rw \
-         -t aquasec/trivy:latest sbom \
-         --format "cyclonedx" \
-         --scanners vuln,license \
-         --output /app/trivy-report-cdxgen-src.json \
-         /app/sbom.json
-        working-directory: project-src
+            docker run --rm \
+            -v "${{ github.workspace }}/project-src":/app:rw \
+            -t aquasec/trivy:latest sbom \
+            --format "cyclonedx" \
+            --scanners vuln,license \
+            --output /app/trivy-report-cdxgen-src.json \
+            /app/sbom.json
+
 
 
 
