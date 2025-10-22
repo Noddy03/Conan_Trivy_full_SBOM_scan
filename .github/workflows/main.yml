@@ -1,4 +1,4 @@
-name: cdxgen and Trivy from src
+name: cdxgen conan test
 
 on:
   workflow_dispatch:
