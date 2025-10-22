@@ -65,7 +65,8 @@ jobs:
         run: cdxgen --version
 
       - name: Generate CocoaPods SBOM with verbose logging
-        run: cdxgen -t cocoapods -o sbom.json . --verbose
+        run: cdxgen -t cpp -o sbom.json .
+
         working-directory: project-src
 
     
