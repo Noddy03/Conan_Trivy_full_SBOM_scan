@@ -53,10 +53,14 @@ jobs:
 
       - name: Conan profile detect
         run: conan profile detect --force
+      - name: Debug conanfile location
+        run: find project-src -name "conanfile.py"
+
 
       - name: Generate Conan lockfile
         run: conan lock create conanfile.py --lockfile-out=conan.lock
-        working-directory: project-src
+        working-directory: project-src/path/to/file
+
       - name: Debug conanfile location
         run: find project-src -name "conanfile.py"
 
