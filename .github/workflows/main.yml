@@ -62,7 +62,8 @@ jobs:
 
       - name: Generate Conan lockfile
         run: conan lock create conanfile.py --lockfile-out=conan.lock
-        working-directory: conan-src
+        working-directory: project-src
+
 
 
       - name: Debug conanfile location
