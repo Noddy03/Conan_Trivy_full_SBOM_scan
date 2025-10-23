@@ -1,26 +1,42 @@
-name: Trivy Scan with SBOM
+name: Scan and Merge SBOMs
 
 on:
   push:
     branches:
       - main
-  pull_request:
 
 jobs:
-  trivy-scan:
+  scan-and-merge:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout current repo
         uses: actions/checkout@v3
 
-      - name: Run Trivy scan with SBOM output
-        uses: aquasecurity/trivy-action@master
+      - name: Checkout other repo
+        uses: actions/checkout@v3
         with:
-          scan-type: fs           # scan filesystem
-          input: '.'              # scan current directory
-          format: cyclonedx       # generate CycloneDX SBOM
-          output: trivy-report.json
-          scanners: vuln          # enable vulnerability scanning explicitly
-          severity: CRITICAL,HIGH,MEDIUM
- 
+          repository: other-owner/other-repo-name
+          path: other-repo
+          token: ${{ secrets.GITHUB_TOKEN }}  # Adjust if private repo needs a PAT
+
+      - name: Setup Trivy
+        uses: aquasecurity/setup-trivy@v1
+
+      - name: Run Trivy SBOM on current repo
+        run: |
+          trivy fs --format cyclonedx --output sbom-current.json --quiet .
+
+      - name: Run Trivy SBOM on other repo
+        run: |
+          trivy fs --format cyclonedx --output sbom-other.json --quiet ./other-repo
+
+      - name: Merge SBOMs
+        run: |
+          python merge_sbom.py sbom-current.json sbom-other.json merged-sbom.json
+
+      - name: Upload merged SBOM artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: merged-sbom
+          path: merged-sbom.json
