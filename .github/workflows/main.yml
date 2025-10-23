@@ -42,7 +42,7 @@ jobs:
         with:
           node-version: '20'
 
-      # Checkout source repository
+      # Checkout source repository to scan
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
@@ -65,34 +65,33 @@ jobs:
           pip install conan
           conan profile detect --force
 
-      # Generate Conan lockfile in the conan repo directory
+      # Generate Conan lockfile
       - name: Generate Conan lockfile
         run: |
           conan lock create conanfile.py --lockfile-out=conan.lock
         working-directory: conan-src
 
-      # Copy Conan lockfile to source directory for scanning
+      # Copy lockfile to source directory for scanning
       - name: Copy Conan lockfile to source directory
         run: cp conan-src/conan.lock project-src/conan.lock
 
-      # Run Trivy SBOM generation and vulnerability scan on source repository
+      # Run Trivy scan with SBOM generation and vulnerability scan
       - name: Run Trivy SBOM generation and vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           input: './project-src'
           format: cyclonedx
+          scanners: vuln
           output: trivy-report.json
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
-          ignore-policy: false
 
       # Upload Trivy report artifact
       - name: Upload Trivy report
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report-${{ inputs.src_repository }}
-          path: trivy-report.json
+          path: project-src/trivy-report.json
           if-no-files-found: warn
- 
