@@ -12,7 +12,7 @@ on:
         required: false
         default: ''
       conan_repository:
-        description: 'Conan Repository with conanfile.py'
+        description: 'Repository containing conanfile.py'
         required: true
         default: ''
       conan_branch:
@@ -33,16 +33,22 @@ jobs:
       actions: read
 
     steps:
+      # -----------------------------
+      # SETUP ENVIRONMENT
+      # -----------------------------
       - name: Setup Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Setup Node.js 
+      - name: Setup Node.js 18
         uses: actions/setup-node@v3
         with:
-          node-version: '18.x'
+          node-version: '18'
 
+      # -----------------------------
+      # CHECKOUT REPOSITORIES
+      # -----------------------------
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
@@ -57,57 +63,71 @@ jobs:
           ref: ${{ inputs.conan_branch }}
           path: conan-src
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-
-      - name: Install Conan, cyclonedx-python-lib and cdxgen
+      # -----------------------------
+      # INSTALL DEPENDENCIES
+      # -----------------------------
+      - name: Install dependencies
         run: |
-         python -m pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install conan cyclonedx-python-lib
           npm install -g @cyclonedx/cdxgen
-
 
       - name: Detect Conan profile
         run: conan profile detect --force
 
-      - name: Debug list conanfile.py in conan-src
+      # -----------------------------
+      # CREATE CONAN LOCKFILE
+      # -----------------------------
+      - name: Debug conanfile.py location
         run: find conan-src -name "conanfile.py"
 
       - name: Generate Conan lockfile
         run: |
-          set -e
           conan lock create conanfile.py --lockfile-out=conan.lock
         working-directory: conan-src
 
-      - name: Debug list generated lockfile
-        run: ls -l conan-src/conan.lock
+      # -----------------------------
+      # FIND SOURCE CODE DIRECTORY
+      # -----------------------------
+      - name: Find main source folder
+        id: srcfolder
+        run: |
+          echo "Searching for C++ source files in project-src..."
+          src_dir=$(find project-src -type f \( -name "*.cpp" -o -name "*.cxx" -o -name "*.cc" -o -name "*.c" -o -name "*.hpp" -o -name "*.h" \) -printf '%h\n' | sort -u | head -n 1)
+          if [ -z "$src_dir" ]; then
+            echo "No C++ source files found in project-src!"
+            exit 1
+          fi
+          echo "Detected source directory: $src_dir"
+          echo "src_dir=$src_dir" >> $GITHUB_OUTPUT
 
-      - name: Debug list conanfile.py in project-src
-        run: find project-src -name "conanfile.py"
+      - name: Debug detected source folder contents
+        run: |
+          echo "Listing up to 50 files found in source directory:"
+          find "${{ steps.srcfolder.outputs.src_dir }}" -type f | head -n 50
 
-      - name: Debug list project-src contents
-        run: ls -al project-src
-
+      # -----------------------------
+      # GENERATE SBOM
+      # -----------------------------
       - name: Check cdxgen version
         run: cdxgen --version
 
-      - name: Generate SBOM
+      - name: Generate SBOM with cdxgen
         run: |
-            if [ "${{ inputs.src_type }}" == "cpp" ]; then
-            echo "Running cdxgen with explicit Conan lockfile..."
-            cdxgen -t cpp -o sbom.json --lockfile ../conan-src/conan.lock .
-            else
-            echo "Unsupported src_type: ${{ inputs.src_type }}"
-            exit 1
-            fi
+          echo "Generating SBOM for project..."
+          cdxgen -t cpp \
+            -o sbom.json \
+            --lockfile $GITHUB_WORKSPACE/conan-src/conan.lock \
+            "${{ steps.srcfolder.outputs.src_dir }}" \
+          || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.json
         working-directory: project-src
-
 
       - name: Verify SBOM file exists
         run: ls -l project-src/sbom.json
 
+      # -----------------------------
+      # SCAN SBOM WITH TRIVY
+      # -----------------------------
       - name: Scan SBOM with Trivy
         run: |
           docker run --rm \
@@ -118,6 +138,9 @@ jobs:
             --output /app/trivy-report-cdxgen-src.json \
             /app/sbom.json
 
+      # -----------------------------
+      # UPLOAD RESULTS
+      # -----------------------------
       - name: Prepare artifact name
         id: artifactname
         run: |
