@@ -11,17 +11,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Run Trivy SBOM generation and vulnerability scan
+      - name: Run Trivy scan with SBOM output
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: fs               # filesystem scan
-          input: ./project-src        # path to scan, adjust to your code location
-          format: cyclonedx           # output SBOM in cyclonedx format
-          output: trivy-report.json   # output file
-          ignore-unfixed: true        # ignore unfixed vulnerabilities
-          vuln-type: os,library       # scan for OS and library vulnerabilities
+          scan-type: fs           # scan filesystem
+          input: '.'              # scan current directory
+          format: cyclonedx       # generate CycloneDX SBOM
+          output: trivy-report.json
+          scanners: vuln          # enable vulnerability scanning explicitly
           severity: CRITICAL,HIGH,MEDIUM
-          scanners: vuln,license      # explicitly enable vulnerability and license scanners
+ 
