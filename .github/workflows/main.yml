@@ -75,7 +75,7 @@ jobs:
         run: cp conan-src/conan.lock project-src/conan.lock
 
       # -----------------------------
-      # TRIVY SCAN BOTH REPOS
+      # TRIVY SCAN BOTH REPOS (SBOM)
       # -----------------------------
       - name: Run Trivy scan on source repo
         uses: aquasecurity/trivy-action@master
@@ -106,63 +106,4 @@ jobs:
       # -----------------------------
       - name: Merge Trivy SBOMs
         run: |
-          cat > merge_sbom.py <<'EOF'
-          import json, sys
-
-          def merge_sboms(paths, out):
-              merged = {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []}
-              for p in paths:
-                  try:
-                      with open(p, "r") as f:
-                          sbom = json.load(f)
-                          merged["components"].extend(sbom.get("components", []))
-                  except Exception as e:
-                      print(f"Warning: could not load {p}: {e}")
-              # Deduplicate components by name+version
-              unique = {(c.get("name"), c.get("version")): c for c in merged["components"]}
-              merged["components"] = list(unique.values())
-              with open(out, "w") as f:
-                  json.dump(merged, f, indent=2)
-
-          if __name__ == "__main__":
-              merge_sboms(sys.argv[1:-1], sys.argv[-1])
-          EOF
-
-          python merge_sbom.py project-src/trivy-src.json conan-src/trivy-conan.json project-src/trivy-merged.json
-
-      # -----------------------------
-      # GENERATE SARIF REPORT
-      # -----------------------------
-      - name: Generate SARIF report
-        run: |
-          trivy fs --scanners vuln --format sarif -o project-src/trivy-results.sarif ./project-src ./conan-src
-
-      - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: project-src/trivy-results.sarif
-
-      # -----------------------------
-      # SANITIZE NAME + UPLOAD ARTIFACTS
-      # -----------------------------
-      - name: Sanitize artifact name
-        id: sanitize
-        run: |
-          SAFE_NAME="${{ inputs.src_repository }}"
-          SAFE_NAME="${SAFE_NAME//\//_}"
-          echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
-
-      - name: Upload merged SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-merged-sbom-${{ steps.sanitize.outputs.name }}
-          path: project-src/trivy-merged.json
-          if-no-files-found: warn
-
-      - name: Upload SARIF report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-sarif-${{ steps.sanitize.outputs.name }}
-          path: project-src/trivy-results.sarif
-          if-no-files-found: warn
-
+          cat > merge_s_
