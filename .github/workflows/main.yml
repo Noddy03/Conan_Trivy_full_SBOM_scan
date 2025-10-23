@@ -24,22 +24,21 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: read
 
     steps:
-      # -----------------------------
-      # Setup
-      # -----------------------------
+      # Setup base environment
       - name: Setup Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Setup Trivy
-        uses: aquasecurity/setup-trivy@v0.3.0
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
 
-      # -----------------------------
-      # Checkout repositories
-      # -----------------------------
+      # Checkout both repositories
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
@@ -54,115 +53,81 @@ jobs:
           ref: ${{ inputs.conan_branch }}
           path: conan-src
 
-      # -----------------------------
-      # Install Conan and generate lockfile
-      # -----------------------------
+      # Install Conan and dependencies
       - name: Install Conan
         run: |
           python -m pip install --upgrade pip
           pip install conan
           conan profile detect --force
 
+      # Generate Conan lockfile
       - name: Generate Conan lockfile
+        run: |
+          conan lock create conanfile.py --lockfile-out=conan.lock
         working-directory: conan-src
-        run: conan lock create conanfile.py --lockfile-out=conan.lock
 
-      - name: Copy Conan lockfile to source repo
+      # Copy lockfile to source directory for scanning
+      - name: Copy Conan lockfile
         run: cp conan-src/conan.lock project-src/conan.lock
 
-      # -----------------------------
-      # Run Trivy SBOM Scans
-      # -----------------------------
-      - name: Generate SBOM for source repository
-        run: |
-          mkdir -p project-src
-          trivy fs --format cyclonedx --output project-src/trivy-src.json ./project-src
+      # --- SETUP TRIVY ---
+      - name: Setup Trivy
+        uses: aquasecurity/setup-trivy@v0.2.3
 
-      - name: Generate SBOM for Conan repository
+      # --- GENERATE SBOM (CycloneDX) ---
+      - name: Generate SBOM for both repositories
         run: |
-          mkdir -p conan-src
-          trivy fs --format cyclonedx --output conan-src/trivy-conan.json ./conan-src
+          mkdir -p sbom-output
+          trivy fs --format cyclonedx -o sbom-output/sbom-source.json ./project-src
+          trivy fs --format cyclonedx -o sbom-output/sbom-conan.json ./conan-src
 
-      # -----------------------------
-      # Merge SBOMs
-      # -----------------------------
-      - name: Merge SBOMs
+      # --- MERGE SBOMS ---
+      - name: Merge SBOM files
         run: |
           cat > merge_sbom.py <<'EOF'
-          import json, sys
-          def merge_sboms(paths, out):
-              merged = {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []}
-              for p in paths:
-                  try:
-                      with open(p, "r") as f:
-                          sbom = json.load(f)
-                          merged["components"].extend(sbom.get("components", []))
-                  except Exception as e:
-                      print(f"Warning: could not read {p}: {e}")
-              # Deduplicate components
-              unique = {(c.get("name"), c.get("version")): c for c in merged["components"]}
+          import json
+          import sys
+
+          def merge_sboms(sbom_paths, output_path):
+              merged = {
+                  "bomFormat": "CycloneDX",
+                  "specVersion": "1.5",
+                  "components": [],
+                  "metadata": {}
+              }
+
+              for path in sbom_paths:
+                  with open(path, "r") as f:
+                      sbom = json.load(f)
+                      components = sbom.get("components", [])
+                      merged["components"].extend(components)
+
+              # Remove duplicates
+              unique = {}
+              for comp in merged["components"]:
+                  key = (comp.get("name"), comp.get("version"))
+                  unique[key] = comp
               merged["components"] = list(unique.values())
-              with open(out, "w") as f:
+
+              with open(output_path, "w") as f:
                   json.dump(merged, f, indent=2)
+
           if __name__ == "__main__":
-              merge_sboms(sys.argv[1:-1], sys.argv[-1])
+              merge_sboms(sys.argv[1:], "sbom-output/merged-sbom.json")
           EOF
-          python merge_sbom.py project-src/trivy-src.json conan-src/trivy-conan.json project-src/trivy-merged.json
 
-      # -----------------------------
-      # Vulnerability Scans (SARIF)
-      # -----------------------------
-      - name: Trivy SARIF for source repo
-        run: trivy fs --scanners vuln --format sarif -o project-src/trivy-src.sarif ./project-src
+          python merge_sbom.py sbom-output/sbom-source.json sbom-output/sbom-conan.json
 
-      - name: Trivy SARIF for conan repo
-        run: trivy fs --scanners vuln --format sarif -o conan-src/trivy-conan.sarif ./conan-src
-
-      - name: Merge SARIF files
-        run: |
-          cat > merge_sarif.py <<'EOF'
-          import json, sys
-          def merge_sarif(paths, out):
-              merged = {"version": "2.1.0", "runs": []}
-              for p in paths:
-                  try:
-                      with open(p, "r") as f:
-                          sarif = json.load(f)
-                          merged["runs"].extend(sarif.get("runs", []))
-                  except Exception as e:
-                      print(f"Warning: could not read {p}: {e}")
-              with open(out, "w") as f:
-                  json.dump(merged, f, indent=2)
-          if __name__ == "__main__":
-              merge_sarif(sys.argv[1:-1], sys.argv[-1])
-          EOF
-          python merge_sarif.py project-src/trivy-src.sarif conan-src/trivy-conan.sarif project-src/trivy-results.sarif
-
-      # -----------------------------
-      # Upload results
-      # -----------------------------
-      - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: project-src/trivy-results.sarif
-
+      # --- UPLOAD ARTIFACTS ---
       - name: Sanitize artifact name
         id: sanitize
         run: |
-          SAFE_NAME="${{ inputs.src_repository }}"
-          SAFE_NAME="${SAFE_NAME//\//_}"
+          SAFE_NAME=$(echo "${{ inputs.src_repository }}" | tr '/' '_')
           echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload merged SBOM
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-merged-sbom-${{ steps.sanitize.outputs.name }}
-          path: project-src/trivy-merged.json
-          if-no-files-found: warn
-
-      - name: Upload merged SARIF
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-merged-sarif-${{ steps.sanitize.outputs.name }}
-          path: project-src/trivy-results.sarif
+          name: merged-sbom-${{ steps.sanitize.outputs.name }}
+          path: sbom-output/merged-sbom.json
           if-no-files-found: warn
