@@ -74,7 +74,7 @@ jobs:
       - name: Copy Conan lockfile to source directory
         run: cp conan-src/conan.lock project-src/conan.lock
 
-      # Generate SBOM and scan with Trivy
+      # Generate SBOM and vulnerability scan with Trivy
       - name: Run Trivy SBOM generation and vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
@@ -86,9 +86,8 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
-          ignore-policy: true
 
-      # Upload scan report artifact
+      # Upload Trivy report artifact
       - name: Upload Trivy report
         uses: actions/upload-artifact@v4
         with:
