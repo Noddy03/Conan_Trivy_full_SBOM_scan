@@ -53,18 +53,6 @@ jobs:
           ref: ${{ inputs.conan_branch }}
           path: conan-src
 
-      # Debug: List C++ files in source repo
-      - name: List C++ files in source repository
-        run: |
-          echo "C++ files in project-src:"
-          find ./project-src -type f \( -name "*.cpp" -o -name "*.h" -o -name "*.hpp" \) || echo "No C++ files found"
-
-      # Debug: List all files in conan repo
-      - name: List files in Conan repository
-        run: |
-          echo "Files in conan-src:"
-          find ./conan-src -type f || echo "No files found"
-
       # Install Conan
       - name: Install Conan
         run: |
@@ -82,34 +70,32 @@ jobs:
       - name: Copy Conan lockfile
         run: cp conan-src/conan.lock project-src/conan.lock
 
-      # --- Setup Trivy ---
+      # Setup Trivy
       - name: Setup Trivy
         uses: aquasecurity/setup-trivy@v0.2.3
 
-      # --- Generate SBOM for Source Repo ---
+      # Generate SBOM for Source Repo (C++)
       - name: Generate SBOM for source repository (C++)
         run: |
           mkdir -p sbom-output
           trivy fs ./project-src \
             --scanners vuln,license,secret \
-            --list-all-pkgs \
             --include-non-failures \
-            --file-patterns '*.cpp,*.h,*.hpp,conan.lock' \
+            --file-patterns 'fs:.*\.cpp$,fs:.*\.h$,fs:.*\.hpp$,fs:conan\.lock$' \
             --format cyclonedx \
             -o sbom-output/sbom-source.json
 
-      # --- Generate SBOM for Conan Repo ---
+      # Generate SBOM for Conan Repo
       - name: Generate SBOM for Conan repository
         run: |
           trivy fs ./conan-src \
             --scanners vuln,license,secret \
-            --list-all-pkgs \
             --include-non-failures \
-            --file-patterns '*.py,conan.lock' \
+            --file-patterns 'fs:.*\.py$,fs:conan\.lock$' \
             --format cyclonedx \
             -o sbom-output/sbom-conan.json
 
-      # --- Merge SBOMs ---
+      # Merge SBOMs
       - name: Merge SBOMs
         run: |
           cat > merge_sbom.py <<'EOF'
@@ -126,13 +112,14 @@ jobs:
           EOF
           python merge_sbom.py sbom-output/sbom-source.json sbom-output/sbom-conan.json
 
-      # --- Upload Artifact ---
+      # Sanitize artifact name
       - name: Sanitize artifact name
         id: sanitize
         run: |
           SAFE_NAME=$(echo "${{ inputs.src_repository }}" | tr '/' '_')
           echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
+      # Upload merged SBOM
       - name: Upload merged SBOM
         uses: actions/upload-artifact@v4
         with:
