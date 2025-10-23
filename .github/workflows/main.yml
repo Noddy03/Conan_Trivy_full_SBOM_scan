@@ -87,7 +87,7 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
           ignore-policy: 'false'
-        working-directory: project-src
+          working-directory: project-src
 
       # Upload scan report artifact
       - name: Upload Trivy report
