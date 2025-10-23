@@ -87,10 +87,18 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
 
+      # Sanitize artifact name (replace / with _)
+      - name: Sanitize artifact name
+        id: sanitize
+        run: |
+          SAFE_NAME="${{ inputs.src_repository }}"
+          SAFE_NAME="${SAFE_NAME//\//_}"
+          echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
+
       # Upload Trivy report artifact
       - name: Upload Trivy report
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-report-${{ inputs.src_repository }}
+          name: trivy-report-${{ steps.sanitize.outputs.name }}
           path: project-src/trivy-report.json
-          if-no-files-found: warn
+          if-no-files-found: w
