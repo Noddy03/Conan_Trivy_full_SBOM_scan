@@ -1,4 +1,4 @@
-name: Conan + Trivy Full SBOM Scan
+name: Conan + Trivy Full SBOM Scan (C++ aware)
 
 on:
   workflow_dispatch:
@@ -53,7 +53,7 @@ jobs:
           ref: ${{ inputs.conan_branch }}
           path: conan-src
 
-      # Install Conan and dependencies
+      # Install Conan
       - name: Install Conan
         run: |
           python -m pip install --upgrade pip
@@ -70,55 +70,49 @@ jobs:
       - name: Copy Conan lockfile
         run: cp conan-src/conan.lock project-src/conan.lock
 
-      # --- SETUP TRIVY ---
+      # --- Setup Trivy ---
       - name: Setup Trivy
         uses: aquasecurity/setup-trivy@v0.2.3
 
-      # --- GENERATE SBOM (CycloneDX) ---
-      - name: Generate SBOM for both repositories
+      # --- Generate SBOM for Source Repo ---
+      - name: Generate SBOM for source repository (C++)
         run: |
           mkdir -p sbom-output
-          trivy fs --format cyclonedx -o sbom-output/sbom-source.json ./project-src
-          trivy fs --format cyclonedx -o sbom-output/sbom-conan.json ./conan-src
+          trivy fs ./project-src \
+            --scanners vuln,license,secret \
+            --list-all-pkgs \
+            --include-non-failures \
+            --format cyclonedx \
+            -o sbom-output/sbom-source.json
 
-      # --- MERGE SBOMS ---
-      - name: Merge SBOM files
+      # --- Generate SBOM for Conan Repo ---
+      - name: Generate SBOM for Conan repository
+        run: |
+          trivy fs ./conan-src \
+            --scanners vuln,license,secret \
+            --list-all-pkgs \
+            --include-non-failures \
+            --format cyclonedx \
+            -o sbom-output/sbom-conan.json
+
+      # --- Merge SBOMs ---
+      - name: Merge SBOMs
         run: |
           cat > merge_sbom.py <<'EOF'
-          import json
-          import sys
-
-          def merge_sboms(sbom_paths, output_path):
-              merged = {
-                  "bomFormat": "CycloneDX",
-                  "specVersion": "1.5",
-                  "components": [],
-                  "metadata": {}
-              }
-
-              for path in sbom_paths:
-                  with open(path, "r") as f:
-                      sbom = json.load(f)
-                      components = sbom.get("components", [])
-                      merged["components"].extend(components)
-
-              # Remove duplicates
-              unique = {}
-              for comp in merged["components"]:
-                  key = (comp.get("name"), comp.get("version"))
-                  unique[key] = comp
-              merged["components"] = list(unique.values())
-
-              with open(output_path, "w") as f:
-                  json.dump(merged, f, indent=2)
-
-          if __name__ == "__main__":
-              merge_sboms(sys.argv[1:], "sbom-output/merged-sbom.json")
+          import json, sys
+          merged = {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": [], "metadata": {}}
+          for p in sys.argv[1:]:
+              with open(p) as f:
+                  sbom = json.load(f)
+                  merged["components"].extend(sbom.get("components", []))
+          unique = {(c.get("name"), c.get("version")): c for c in merged["components"]}
+          merged["components"] = list(unique.values())
+          with open("sbom-output/merged-sbom.json", "w") as f:
+              json.dump(merged, f, indent=2)
           EOF
-
           python merge_sbom.py sbom-output/sbom-source.json sbom-output/sbom-conan.json
 
-      # --- UPLOAD ARTIFACTS ---
+      # --- Upload Artifact ---
       - name: Sanitize artifact name
         id: sanitize
         run: |
