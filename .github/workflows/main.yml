@@ -1,32 +1,141 @@
-name: Scan Other Repo with Trivy
+name: Conan + Trivy Full SBOM Scan (C++ aware)
 
 on:
-  workflow_dispatch: # Manual trigger for easy testing
+  workflow_dispatch:
+    inputs:
+      src_repository:
+        description: 'Source Repository (e.g., user/repo)'
+        required: true
+      src_branch:
+        description: 'Branch of source repository'
+        required: false
+        default: 'main'
+      conan_repository:
+        description: 'Repository containing conanfile.py'
+        required: true
+      conan_branch:
+        description: 'Branch for Conan repository'
+        required: false
+        default: 'main'
 
 jobs:
-  trivy-scan-other-repo:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
 
     steps:
-      - name: Checkout this repo (optional)
-        uses: actions/checkout@v3
-
-      - name: Checkout other repository
-        uses: actions/checkout@v3
+      # Setup base environment
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v4
         with:
-          repository: username/other-repo   # <-- Change this!
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-          path: other-repo-folder
+          python-version: '3.10'
 
-      - name: Setup Trivy
-        uses: aquasecurity/setup-trivy@v2
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
 
-      - name: Run Trivy scan on other repo
+      # Checkout both repositories
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.src_repository }}
+          ref: ${{ inputs.src_branch }}
+          path: project-src
+
+      - name: Checkout Conan repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.conan_repository }}
+          ref: ${{ inputs.conan_branch }}
+          path: conan-src
+
+      # Debug: List C++ files in source repo
+      - name: List C++ files in source repository
         run: |
-          trivy fs ./other-repo-folder --format sarif -o trivy-results.sarif
+          echo "C++ files in project-src:"
+          find ./project-src -type f \( -name "*.cpp" -o -name "*.h" -o -name "*.hpp" \) || echo "No C++ files found"
 
-      - name: Upload Trivy results artifact
+      # Debug: List all files in conan repo
+      - name: List files in Conan repository
+        run: |
+          echo "Files in conan-src:"
+          find ./conan-src -type f || echo "No files found"
+
+      # Install Conan
+      - name: Install Conan
+        run: |
+          python -m pip install --upgrade pip
+          pip install conan
+          conan profile detect --force
+
+      # Generate Conan lockfile
+      - name: Generate Conan lockfile
+        run: |
+          conan lock create conanfile.py --lockfile-out=conan.lock
+        working-directory: conan-src
+
+      # Copy lockfile to source directory for scanning
+      - name: Copy Conan lockfile
+        run: cp conan-src/conan.lock project-src/conan.lock
+
+      # --- Setup Trivy ---
+      - name: Setup Trivy
+        uses: aquasecurity/setup-trivy@v0.2.3
+
+      # --- Generate SBOM for Source Repo ---
+      - name: Generate SBOM for source repository (C++)
+        run: |
+          mkdir -p sbom-output
+          trivy fs ./project-src \
+            --scanners vuln,license,secret \
+            --list-all-pkgs \
+            --include-non-failures \
+            --file-patterns '*.cpp,*.h,*.hpp,conan.lock' \
+            --format cyclonedx \
+            -o sbom-output/sbom-source.json
+
+      # --- Generate SBOM for Conan Repo ---
+      - name: Generate SBOM for Conan repository
+        run: |
+          trivy fs ./conan-src \
+            --scanners vuln,license,secret \
+            --list-all-pkgs \
+            --include-non-failures \
+            --file-patterns '*.py,conan.lock' \
+            --format cyclonedx \
+            -o sbom-output/sbom-conan.json
+
+      # --- Merge SBOMs ---
+      - name: Merge SBOMs
+        run: |
+          cat > merge_sbom.py <<'EOF'
+          import json, sys
+          merged = {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": [], "metadata": {}}
+          for p in sys.argv[1:]:
+              with open(p) as f:
+                  sbom = json.load(f)
+                  merged["components"].extend(sbom.get("components", []))
+          unique = {(c.get("name"), c.get("version")): c for c in merged["components"]}
+          merged["components"] = list(unique.values())
+          with open("sbom-output/merged-sbom.json", "w") as f:
+              json.dump(merged, f, indent=2)
+          EOF
+          python merge_sbom.py sbom-output/sbom-source.json sbom-output/sbom-conan.json
+
+      # --- Upload Artifact ---
+      - name: Sanitize artifact name
+        id: sanitize
+        run: |
+          SAFE_NAME=$(echo "${{ inputs.src_repository }}" | tr '/' '_')
+          echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload merged SBOM
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-results-other-repo
-          path: trivy-results.sarif
+          name: merged-sbom-${{ steps.sanitize.outputs.name }}
+          path: sbom-output/merged-sbom.json
+          if-no-files-found: warn
