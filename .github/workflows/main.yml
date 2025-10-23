@@ -1,6 +1,12 @@
+name: Scan Other Repo with Trivy
+
+on:
+  workflow_dispatch: # Manual trigger for easy testing
+
 jobs:
-  scan-other-repo:
+  trivy-scan-other-repo:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout this repo (optional)
         uses: actions/checkout@v3
@@ -8,18 +14,18 @@ jobs:
       - name: Checkout other repository
         uses: actions/checkout@v3
         with:
-          repository: username/other-repo  # Replace with the other repo
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # Needs a PAT with repo read permission
+          repository: username/other-repo   # <-- Change this!
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           path: other-repo-folder
 
-      - name: Set up Trivy
+      - name: Setup Trivy
         uses: aquasecurity/setup-trivy@v2
 
       - name: Run Trivy scan on other repo
         run: |
           trivy fs ./other-repo-folder --format sarif -o trivy-results.sarif
-          
-      - name: Upload Trivy results
+
+      - name: Upload Trivy results artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-results-other-repo
