@@ -67,7 +67,7 @@ jobs:
       - name: Detect Conan profile
         run: conan profile detect --force
 
-      - name: Debug: list conanfile.py in conan-src
+      - name: Debug list conanfile.py in conan-src
         run: find conan-src -name "conanfile.py"
 
       - name: Generate Conan lockfile
@@ -76,13 +76,13 @@ jobs:
           conan lock create conanfile.py --lockfile-out=conan.lock
         working-directory: conan-src
 
-      - name: Debug: list generated lockfile
+      - name: Debug list generated lockfile
         run: ls -l conan-src/conan.lock
 
-      - name: Debug: list conanfile.py in project-src
+      - name: Debug list conanfile.py in project-src
         run: find project-src -name "conanfile.py"
 
-      - name: Debug: list project-src contents
+      - name: Debug list project-src contents
         run: ls -al project-src
 
       - name: Check cdxgen version
