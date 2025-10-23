@@ -81,6 +81,11 @@ jobs:
 
       - name: Check cdxgen version
         run: cdxgen --version
+      - name: Debug project-src contents
+        run: |
+          echo "Listing files under project-src:"
+          find project-src
+
 
       - name: Generate SBOM
         run: |
