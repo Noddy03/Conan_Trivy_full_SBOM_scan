@@ -1,4 +1,4 @@
-name: cdxgen conan test
+name: cdxgen + Conan Full SBOM Scan
 
 on:
   workflow_dispatch:
@@ -6,15 +6,13 @@ on:
       src_repository:
         description: 'Source Repository (e.g., user/repo)'
         required: true
-        default: ''
       src_branch:
         description: 'Branch of source repository'
         required: false
-        default: ''
+        default: 'main'
       conan_repository:
         description: 'Repository containing conanfile.py'
         required: true
-        default: ''
       conan_branch:
         description: 'Branch for Conan repository'
         required: false
@@ -34,7 +32,7 @@ jobs:
 
     steps:
       # -----------------------------
-      # ENVIRONMENT SETUP
+      # SETUP ENVIRONMENT
       # -----------------------------
       - name: Setup Python 3.10
         uses: actions/setup-python@v4
@@ -42,7 +40,7 @@ jobs:
           python-version: '3.10'
 
       - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: '20'
 
@@ -64,58 +62,62 @@ jobs:
           path: conan-src
 
       # -----------------------------
-      # INSTALL REQUIRED TOOLS
+      # INSTALL DEPENDENCIES
       # -----------------------------
-      - name: Install Conan and cdxgen
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install conan cyclonedx-python-lib
-          npm install -g @cyclonedx/cdxgen
-
+          npm install -g @cyclonedx/cdxgen @cyclonedx/cdxmerge
       - name: Detect Conan profile
         run: conan profile detect --force
 
       # -----------------------------
-      # CREATE CONAN LOCKFILE
+      # GENERATE CONAN LOCKFILE
       # -----------------------------
-      - name: Locate conanfile.py
+      - name: Debug conanfile.py location
         run: find conan-src -name "conanfile.py"
 
       - name: Generate Conan lockfile
-        run: conan lock create conanfile.py --lockfile-out=conan.lock
-        working-directory: conan-src
-
-      # -----------------------------
-      # VERIFY CONAN DEPENDENCIES
-      # -----------------------------
-      - name: Show Conan dependency graph
-        working-directory: conan-src
         run: |
-          echo "Inspecting Conan dependencies..."
-          conan info . --graph=conan_deps.html || true
-          ls -l conan.lock
+          conan lock create conanfile.py --lockfile-out=conan.lock
+          echo "Lockfile created:"
+          head -n 30 conan.lock
+        working-directory: conan-src
 
       # -----------------------------
-      # GENERATE SBOM (MAIN STEP)
+      # GENERATE SBOMs
       # -----------------------------
       - name: Check cdxgen version
         run: cdxgen --version
 
-      - name: Generate combined SBOM (Conan + source)
+      # Generate SBOM for Conan dependencies
+      - name: Generate SBOM for Conan dependencies
         run: |
-          echo "Generating full SBOM for project and dependencies..."
-          cdxgen -t cpp \
-            -o sbom.json \
-            --lockfile conan.lock \
-            $GITHUB_WORKSPACE/project-src || \
-            echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.json
+          echo "Generating Conan dependency SBOM..."
+          cdxgen -t cpp -o conan-sbom.json --lockfile conan.lock . \
+          || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > conan-sbom.json
         working-directory: conan-src
 
-      - name: Verify SBOM file
+      # Generate SBOM for source project
+      - name: Generate SBOM for source code
         run: |
-          echo "Generated SBOM:"
-          ls -l conan-src/sbom.json
-          head -n 20 conan-src/sbom.json
+          echo "Generating source SBOM..."
+          cdxgen -t cpp -o source-sbom.json . \
+          || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > source-sbom.json
+        working-directory: project-src
+
+      # Merge the two SBOMs
+      - name: Merge SBOMs (dependencies + source)
+        run: |
+          echo "Merging Conan and source SBOMs..."
+          cdxmerge -o sbom.json ../conan-src/conan-sbom.json source-sbom.json
+          echo "Final merged SBOM:"
+          head -n 40 sbom.json
+        working-directory: project-src
+
+      - name: Verify SBOM file exists
+        run: ls -l project-src/sbom.json
 
       # -----------------------------
       # SCAN SBOM WITH TRIVY
@@ -123,7 +125,7 @@ jobs:
       - name: Scan SBOM with Trivy
         run: |
           docker run --rm \
-            -v "${{ github.workspace }}/conan-src":/app:rw \
+            -v "${{ github.workspace }}/project-src":/app:rw \
             -t aquasec/trivy:latest sbom \
             --format "cyclonedx" \
             --scanners vuln,license \
@@ -131,7 +133,7 @@ jobs:
             /app/sbom.json
 
       # -----------------------------
-      # UPLOAD ARTIFACTS
+      # UPLOAD RESULTS
       # -----------------------------
       - name: Prepare artifact name
         id: artifactname
@@ -140,12 +142,11 @@ jobs:
           out_name="${out_name//\//-}"
           echo "out_name=$out_name" >> $GITHUB_OUTPUT
 
-      - name: Upload SBOM and Trivy results
+      - name: Upload SBOM and Trivy scan results
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifactname.outputs.out_name }}
           path: |
-            conan-src/sbom.json
-            conan-src/trivy-report-cdxgen-src.json
-            conan-src/conan_deps.html
+            project-src/sbom.json
+            project-src/trivy-report-cdxgen-src.json
           if-no-files-found: warn
