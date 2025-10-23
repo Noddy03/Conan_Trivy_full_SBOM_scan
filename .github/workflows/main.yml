@@ -1,97 +1,27 @@
-name: Conan + Trivy Full SBOM Scan
+name: Trivy Scan with SBOM
 
 on:
-  workflow_dispatch:
-    inputs:
-      src_repository:
-        description: 'Source Repository (e.g., user/repo)'
-        required: true
-      src_branch:
-        description: 'Branch of source repository'
-        required: false
-        default: 'main'
-      conan_repository:
-        description: 'Repository containing conanfile.py'
-        required: true
-      conan_branch:
-        description: 'Branch for Conan repository'
-        required: false
-        default: 'main'
-      src_type:
-        description: 'Project Type (java, python, dotnet, cpp, c++)'
-        required: false
-        default: 'cpp'
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
-  build:
+  trivy-scan:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
 
     steps:
-      # Setup environment
-      - name: Setup Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-
-      # Checkout repositories
-      - name: Checkout source repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.src_repository }}
-          ref: ${{ inputs.src_branch }}
-          path: project-src
-
-      - name: Checkout Conan repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.conan_repository }}
-          ref: ${{ inputs.conan_branch }}
-          path: conan-src
-
-      # Install dependencies
-      - name: Install Conan and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install conan
-          conan profile detect --force
-
-      # Generate Conan lockfile
-      - name: Generate Conan lockfile
-        run: |
-          conan lock create conanfile.py --lockfile-out=conan.lock
-        working-directory: conan-src
-
-      # Copy lockfile to source dir for scanning
-      - name: Copy Conan lockfile to source directory
-        run: cp conan-src/conan.lock project-src/conan.lock
-
-      # Generate SBOM and scan with Trivy
       - name: Run Trivy SBOM generation and vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: 'fs'
-          format: 'cyclonedx'
-          output: 'trivy-report.json'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-          ignore-policy: 'false'
-          directory: './project-src'
-
-      # Upload scan report artifact
-      - name: Upload Trivy report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report-${{ inputs.src_repository }}
-          path: project-src/trivy-report.json
-          if-no-files-found: warn
- 
+          scan-type: fs               # filesystem scan
+          input: ./project-src        # path to scan, adjust to your code location
+          format: cyclonedx           # output SBOM in cyclonedx format
+          output: trivy-report.json   # output file
+          ignore-unfixed: true        # ignore unfixed vulnerabilities
+          vuln-type: os,library       # scan for OS and library vulnerabilities
+          severity: CRITICAL,HIGH,MEDIUM
+          scanners: vuln,license      # explicitly enable vulnerability and license scanners
