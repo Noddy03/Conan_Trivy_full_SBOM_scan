@@ -1,79 +1,26 @@
-name: C++ Security Scan
-
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-
 jobs:
-  generate-lockfile:
+  scan-other-repo:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source code
+      - name: Checkout this repo (optional)
         uses: actions/checkout@v3
 
-      - name: Install Conan
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip3 install conan
-
-      - name: Generate Conan lockfile
-        run: |
-          conan lock create conanfile.py --lockfile-out=conan.lock || echo "No conanfile.py found or lockfile generation failed"
-
-      - name: Upload Conan lockfile artifact
-        if: success() && steps.generate_lockfile.outputs.lockfile-exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: conan-lockfile
-          path: conan.lock
-
-  trivy-scan:
-    needs: generate-lockfile
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout source code
+      - name: Checkout other repository
         uses: actions/checkout@v3
-
-      - name: Download Conan lockfile artifact
-        uses: actions/download-artifact@v3
         with:
-          name: conan-lockfile
-          path: .
+          repository: username/other-repo  # Replace with the other repo
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # Needs a PAT with repo read permission
+          path: other-repo-folder
 
       - name: Set up Trivy
         uses: aquasecurity/setup-trivy@v2
 
-      - name: Run Trivy filesystem scan and vulnerability scan with lockfile
+      - name: Run Trivy scan on other repo
         run: |
-          # Scan source files for vulnerabilities
-          trivy fs ./project-src --format sarif -o trivy-src-results.sarif --scanners vuln,secret,license
-
-          # If conan.lock exists, scan that file as well (to catch dependency vulns)
-          if [ -f conan.lock ]; then
-            trivy fs conan.lock --format sarif -o trivy-lockfile-results.sarif --scanners vuln,secret,license
-          fi
-
-      - name: Upload Trivy scan results
+          trivy fs ./other-repo-folder --format sarif -o trivy-results.sarif
+          
+      - name: Upload Trivy results
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-scan-results
-          path: |
-            trivy-src-results.sarif
-            trivy-lockfile-results.sarif
-
-  codeql-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v3
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
-        with:
-          languages: cpp
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v2
+          name: trivy-results-other-repo
+          path: trivy-results.sarif
