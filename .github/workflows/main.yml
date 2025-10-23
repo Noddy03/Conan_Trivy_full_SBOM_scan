@@ -194,5 +194,5 @@ jobs:
           name: ${{ steps.artifactname.outputs.out_name }}
           path: |
             project-src/sbom.json
-            project-src/trivy-report-cdxgen-src.json
+            project-src/trivy-report-cdxgen-src.json 
           if-no-files-found: warn
