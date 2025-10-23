@@ -1,130 +1,37 @@
-name: cdxgen conan test
+name: SBOM Scan
 
 on:
-  workflow_dispatch:
-    inputs:
-      src_repository:
-        description: 'Source Repository (e.g., user/repo)'
-        required: true
-        default: ''
-      src_branch:
-        description: 'Branch of source repository'
-        required: false
-        default: ''
-      conan_repository:
-        description: 'Repository containing conanfile.py'
-        required: true
-        default: ''
-      conan_branch:
-        description: 'Branch for Conan repository'
-        required: false
-        default: 'main'
-      src_type:
-        description: 'Project Type (java, python, dotnet, cpp, c++)'
-        required: false
-        default: 'cpp'
+  push:
+    branches:
+      - main
 
 jobs:
-  build:
+  scan:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
 
     steps:
-      - name: Setup Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
 
-      - name: Checkout source repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.src_repository }}
-          ref: ${{ inputs.src_branch }}
-          path: project-src
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt  # if you have dependencies for your script
 
-      - name: Checkout Conan repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.conan_repository }}
-          ref: ${{ inputs.conan_branch }}
-          path: conan-src
+    - name: Merge SBOMs
+      run: |
+        python merge_sbom.py project-src/merged-sbom.json project-src/sbom1.json project-src/sbom2.json
+      # Adjust the paths and script name as needed
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install conan cyclonedx-python-lib
+    - name: Validate merged SBOM JSON
+      run: |
+        python -c "import json; json.load(open('project-src/merged-sbom.json'))"
 
-      - name: Detect Conan profile
-        run: conan profile detect --force
-
-      - name: Debug conanfile.py location
-        run: find conan-src -name "conanfile.py"
-
-      - name: Generate Conan lockfile
-        run: conan lock create conanfile.py --lockfile-out=conan.lock
-        working-directory: conan-src
-
-      - name: Find main source folder
-        id: srcfolder
-        run: |
-          echo "Searching for C++ source files in project-src..."
-          src_dir=$(find project-src -type f \( -name "*.cpp" -o -name "*.cxx" -o -name "*.cc" -o -name "*.c" -o -name "*.hpp" -o -name "*.h" \) -printf '%h\n' | sort -u | head -n 1)
-          if [ -z "$src_dir" ]; then
-            echo "No C++ source files found in project-src!"
-            exit 1
-          fi
-          echo "Detected source directory: $src_dir"
-          echo "src_dir=$src_dir" >> $GITHUB_OUTPUT
-
-      - name: Generate SBOM for project source
-        run: |
-          cdxgen -t cpp -o sbom.json "${{ steps.srcfolder.outputs.src_dir }}" || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.json
-        working-directory: project-src
-
-      - name: Generate SBOM for Conan dependencies
-        run: |
-          # Assuming you have a way to generate SBOM from conan.lock, e.g.:
-          cdxgen -t conan --lockfile ../conan-src/conan.lock -o conan-sbom.json || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > conan-sbom.json
-        working-directory: project-src
-
-      - name: Merge SBOMs
-        run: |
-          python merge_sbom.py merged-sbom.json sbom.json conan-sbom.json
-        working-directory: project-src
-
-      - name: Verify merged SBOM file exists
-        run: ls -l project-src/merged-sbom.json
-
-      - name: Scan merged SBOM with Trivy
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}/project-src":/app:rw \
-            -t aquasec/trivy:latest sbom \
-            --format "cyclonedx" \
-            --scanners vuln,license \
-            --output /app/trivy-report.json \
-            /app/merged-sbom.json
-
-      - name: Prepare artifact name
-        id: artifactname
-        run: |
-          out_name="${{ inputs.src_repository }}"
-          out_name="${out_name//\//-}"
-          echo "out_name=$out_name" >> $GITHUB_OUTPUT
-
-      - name: Upload SBOM and Trivy scan results
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.artifactname.outputs.out_name }}
-          path: |
-            project-src/merged-sbom.json
-            project-src/trivy-report.json
-          if-no-files-found: warn
+    - name: Run Trivy scan on merged SBOM
+      run: |
+        docker run --rm -v ${{ github.workspace }}/project-src:/project aquasec/trivy:latest sbom /project/merged-sbom.json
