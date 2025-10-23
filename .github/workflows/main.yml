@@ -70,24 +70,23 @@ jobs:
           conan lock create conanfile.py --lockfile-out=conan.lock
         working-directory: conan-src
 
-      # Copy lockfile to source dir for scanning
+      # Copy lockfile to source directory for scanning
       - name: Copy Conan lockfile to source directory
         run: cp conan-src/conan.lock project-src/conan.lock
 
-      # Generate SBOM and scan with Trivy inside project-src folder
+      # Generate SBOM and scan with Trivy
       - name: Run Trivy SBOM generation and vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
-          input: '.'
+          input: './project-src'
           format: cyclonedx
           scanners: vuln
-          output: trivy-report.json
+          output: project-src/trivy-report.json
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
-          ignore-policy: 'false'
-          working-directory: project-src
+          ignore-policy: true
 
       # Upload scan report artifact
       - name: Upload Trivy report
