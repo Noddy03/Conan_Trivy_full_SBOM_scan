@@ -4,23 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       src_repository:
-        description: 'Source Repository'
+        description: 'Source Repository (e.g., user/repo)'
         required: true
         default: ''
       src_branch:
-        description: 'Branch'
+        description: 'Branch of source repository'
         required: false
         default: ''
-      conan_repository:             # <-- New input for Conan repo
+      conan_repository:
         description: 'Conan Repository with conanfile.py'
         required: true
         default: ''
       conan_branch:
-        description: 'Branch for Conan repo'
+        description: 'Branch for Conan repository'
         required: false
         default: 'main'
       src_type:
-        description: 'Project Type (java, python, dotnet,cpp,c++) see https://cyclonedx.github.io/cdxgen/#/PROJECT_TYPES'
+        description: 'Project Type (java, python, dotnet, cpp, c++)'
         required: false
         default: 'cpp'
 
@@ -33,10 +33,15 @@ jobs:
       actions: read
 
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v4 
-        with: 
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v4
+        with:
           python-version: '3.10'
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
       - name: Checkout source repository
         uses: actions/checkout@v4
@@ -50,57 +55,49 @@ jobs:
         with:
           repository: ${{ inputs.conan_repository }}
           ref: ${{ inputs.conan_branch }}
-          path: conan-src      # <--- checkout here
+          path: conan-src
 
-      - name: Install Conan, cyclonedx-python-lib and cdxgen
+      - name: Install dependencies (Conan, cyclonedx-python-lib, cdxgen)
         run: |
+          set -e
           python -m pip install --upgrade pip
           pip install conan cyclonedx-python-lib
           npm install -g @cyclonedx/cdxgen
 
-      - name: Checkout workflow repository (self)
-        uses: actions/checkout@v4
-        with:
-          path: self
-
-      - name: Conan profile detect
+      - name: Detect Conan profile
         run: conan profile detect --force
 
-      - name: Debug conanfile location in conan-src
+      - name: Debug: list conanfile.py in conan-src
         run: find conan-src -name "conanfile.py"
 
       - name: Generate Conan lockfile
-        run: conan lock create conanfile.py --lockfile-out=conan.lock
-        working-directory: conan-src   # <--- run here
+        run: |
+          set -e
+          conan lock create conanfile.py --lockfile-out=conan.lock
+        working-directory: conan-src
 
-      - name: Debug conanfile location in project-src
+      - name: Debug: list generated lockfile
+        run: ls -l conan-src/conan.lock
+
+      - name: Debug: list conanfile.py in project-src
         run: find project-src -name "conanfile.py"
 
-      - name: List files in project-src
+      - name: Debug: list project-src contents
         run: ls -al project-src
 
       - name: Check cdxgen version
         run: cdxgen --version
-      - name: Debug project-src contents
-        run: |
-          echo "Listing files under project-src:"
-          find project-src
 
-
-      - name: Generate SBOM
+      - name: Generate SBOM with cdxgen
         run: |
           if [ "${{ inputs.src_type }}" == "cpp" ]; then
             echo "Running cdxgen with explicit Conan lockfile..."
-            cdxgen -t cpp -o sbom.json --lockfile ../conan-src/conan.lock . \
-            || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.json
+            cdxgen -t cpp -o sbom.json --lockfile ../conan-src/conan.lock .
           else
             echo "Unsupported src_type: ${{ inputs.src_type }}"
             exit 1
           fi
         working-directory: project-src
-
-
-
 
       - name: Verify SBOM file exists
         run: ls -l project-src/sbom.json
@@ -108,23 +105,25 @@ jobs:
       - name: Scan SBOM with Trivy
         run: |
           docker run --rm \
-          -v "${{ github.workspace }}/project-src":/app:rw \
-          -t aquasec/trivy:latest sbom \
-          --format "cyclonedx" \
-          --scanners vuln,license \
-          --output /app/trivy-report-cdxgen-src.json \
-          /app/sbom.json
+            -v "${{ github.workspace }}/project-src":/app:rw \
+            -t aquasec/trivy:latest sbom \
+            --format "cyclonedx" \
+            --scanners vuln,license \
+            --output /app/trivy-report-cdxgen-src.json \
+            /app/sbom.json
 
-      - name: Artifact name
+      - name: Prepare artifact name
         id: artifactname
         run: |
           out_name="${{ inputs.src_repository }}"
           out_name="${out_name//\//-}"
           echo "out_name=$out_name" >> $GITHUB_OUTPUT
 
-      - name: Upload SBOM results
+      - name: Upload SBOM and Trivy scan results
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifactname.outputs.out_name }}
-          path: project-src/trivy-report-cdxgen-src.json
+          path: |
+            project-src/sbom.json
+            project-src/trivy-report-cdxgen-src.json
           if-no-files-found: warn
