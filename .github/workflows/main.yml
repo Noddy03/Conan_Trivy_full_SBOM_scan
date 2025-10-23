@@ -1,42 +1,98 @@
-name: Scan and Merge SBOMs
+name: Conan + Trivy Full SBOM Scan
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      src_repository:
+        description: 'Source Repository (e.g., user/repo)'
+        required: true
+      src_branch:
+        description: 'Branch of source repository'
+        required: false
+        default: 'main'
+      conan_repository:
+        description: 'Repository containing conanfile.py'
+        required: true
+      conan_branch:
+        description: 'Branch for Conan repository'
+        required: false
+        default: 'main'
+      src_type:
+        description: 'Project Type (java, python, dotnet, cpp, c++)'
+        required: false
+        default: 'cpp'
 
 jobs:
-  scan-and-merge:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
 
     steps:
-      - name: Checkout current repo
-        uses: actions/checkout@v3
-
-      - name: Checkout other repo
-        uses: actions/checkout@v3
+      # Setup environment
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v4
         with:
-          repository: other-owner/other-repo-name
-          path: other-repo
-          token: ${{ secrets.GITHUB_TOKEN }}  # Adjust if private repo needs a PAT
+          python-version: '3.10'
 
-      - name: Setup Trivy
-        uses: aquasecurity/setup-trivy@v1
-
-      - name: Run Trivy SBOM on current repo
-        run: |
-          trivy fs --format cyclonedx --output sbom-current.json --quiet .
-
-      - name: Run Trivy SBOM on other repo
-        run: |
-          trivy fs --format cyclonedx --output sbom-other.json --quiet ./other-repo
-
-      - name: Merge SBOMs
-        run: |
-          python merge_sbom.py sbom-current.json sbom-other.json merged-sbom.json
-
-      - name: Upload merged SBOM artifact
-        uses: actions/upload-artifact@v3
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v3
         with:
-          name: merged-sbom
-          path: merged-sbom.json
+          node-version: '20'
+
+      # Checkout source repository
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.src_repository }}
+          ref: ${{ inputs.src_branch }}
+          path: project-src
+
+      # Checkout Conan repository
+      - name: Checkout Conan repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.conan_repository }}
+          ref: ${{ inputs.conan_branch }}
+          path: conan-src
+
+      # Install Conan and dependencies
+      - name: Install Conan and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install conan
+          conan profile detect --force
+
+      # Generate Conan lockfile in the conan repo directory
+      - name: Generate Conan lockfile
+        run: |
+          conan lock create conanfile.py --lockfile-out=conan.lock
+        working-directory: conan-src
+
+      # Copy Conan lockfile to source directory for scanning
+      - name: Copy Conan lockfile to source directory
+        run: cp conan-src/conan.lock project-src/conan.lock
+
+      # Run Trivy SBOM generation and vulnerability scan on source repository
+      - name: Run Trivy SBOM generation and vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          input: './project-src'
+          format: cyclonedx
+          output: trivy-report.json
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-policy: false
+
+      # Upload Trivy report artifact
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report-${{ inputs.src_repository }}
+          path: trivy-report.json
+          if-no-files-found: warn
+ 
