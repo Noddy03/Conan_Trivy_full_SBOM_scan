@@ -98,6 +98,7 @@ jobs:
         working-directory: project-src
 
 
+
       - name: Verify SBOM file exists
         run: ls -l project-src/sbom.json
 
