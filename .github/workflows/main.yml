@@ -1,4 +1,4 @@
-name: Conan + Trivy Full SBOM Scan (C++ aware)
+name: Conan + Trivy Full SBOM Scan
 
 
 
@@ -19,6 +19,10 @@ on:
        description: 'Branch for Conan repository'
        required: false
        default: 'main'
+     src_type:
+       description: 'Project Type (java, python, dotnet, cpp, c++)'
+       required: false
+       default: 'cpp'
 
 
 
@@ -33,7 +37,9 @@ jobs:
 
 
    steps:
-     # Setup base environment
+     # -----------------------------
+     # SETUP ENVIRONMENT
+     # -----------------------------
      - name: Setup Python 3.10
        uses: actions/setup-python@v4
        with:
@@ -48,7 +54,9 @@ jobs:
 
 
 
-     # Checkout both repositories
+     # -----------------------------
+     # CHECKOUT REPOSITORIES
+     # -----------------------------
      - name: Checkout source repository
        uses: actions/checkout@v4
        with:
@@ -67,15 +75,19 @@ jobs:
 
 
 
-     # Install Conan
-     - name: Install Conan
+     # -----------------------------
+     # INSTALL DEPENDENCIES
+     # -----------------------------
+     - name: Install Conan and dependencies
        run: |
          python -m pip install --upgrade pip
          pip install conan
          conan profile detect --force
 
 
-     # Generate Conan lockfile
+     # -----------------------------
+     # GENERATE CONAN LOCKFILE
+     # -----------------------------
      - name: Generate Conan lockfile
        run: |
          conan lock create conanfile.py --lockfile-out=conan.lock
@@ -83,71 +95,63 @@ jobs:
 
 
 
-     # Copy lockfile to source directory for scanning
-     - name: Copy Conan lockfile
+     - name: Copy Conan lockfile to source directory
        run: cp conan-src/conan.lock project-src/conan.lock
 
 
 
-     # --- Setup Trivy ---
-     - name: Setup Trivy
-       uses: aquasecurity/setup-trivy@v0.2.3
+     # -----------------------------
+     # GENERATE SBOM & SCAN WITH TRIVY
+     # -----------------------------
+     - name: Run Trivy SBOM generation and vulnerability scan
+       uses: aquasecurity/trivy-action@master
+       with:
+         scan-type: fs
+         input: './project-src'
+         format: cyclonedx
+         scanners: vuln
+         output: project-src/trivy-report.json
+         ignore-unfixed: true
+         vuln-type: os,library
+         severity: CRITICAL,HIGH,MEDIUM
+         # Removed problematic policy line
+         # ignore-policy: true
 
 
 
-     # --- Generate SBOM for Source Repo ---
-     - name: Generate SBOM for source repository (C++)
+     # -----------------------------
+     # (OPTIONAL) GENERATE SARIF FILE FOR GITHUB SECURITY TAB
+     # -----------------------------
+     - name: Generate SARIF report for GitHub Code Scanning
        run: |
-         mkdir -p sbom-output
-         trivy fs ./project-src \
-           --scanners vuln,license,secret \
-           --list-all-pkgs \
-           --include-non-failures \
-           --format cyclonedx \
-           -o sbom-output/sbom-source.json
+         trivy fs --scanners vuln --format sarif -o project-src/trivy-results.sarif ./project-src
 
 
-     # --- Generate SBOM for Conan Repo ---
-     - name: Generate SBOM for Conan repository
-       run: |
-         trivy fs ./conan-src \
-           --scanners vuln,license,secret \
-           --list-all-pkgs \
-           --include-non-failures \
-           --format cyclonedx \
-           -o sbom-output/sbom-conan.json
+     - name: Upload SARIF to GitHub Security tab
+       uses: github/codeql-action/upload-sarif@v3
+       with:
+         sarif_file: project-src/trivy-results.sarif
 
 
-     # --- Merge SBOMs ---
-     - name: Merge SBOMs
-       run: |
-         cat > merge_sbom.py <<'EOF'
-         import json, sys
-         merged = {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": [], "metadata": {}}
-         for p in sys.argv[1:]:
-             with open(p) as f:
-                 sbom = json.load(f)
-                 merged["components"].extend(sbom.get("components", []))
-         unique = {(c.get("name"), c.get("version")): c for c in merged["components"]}
-         merged["components"] = list(unique.values())
-         with open("sbom-output/merged-sbom.json", "w") as f:
-             json.dump(merged, f, indent=2)
-         EOF
-         python merge_sbom.py sbom-output/sbom-source.json sbom-output/sbom-conan.json
 
-
-     # --- Upload Artifact ---
+     # -----------------------------
+     # SANITIZE ARTIFACT NAME
+     # -----------------------------
      - name: Sanitize artifact name
        id: sanitize
        run: |
-         SAFE_NAME=$(echo "${{ inputs.src_repository }}" | tr '/' '_')
+         SAFE_NAME="${{ inputs.src_repository }}"
+         SAFE_NAME="${SAFE_NAME//\//_}"
          echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
 
-     - name: Upload merged SBOM
+     # -----------------------------
+     # UPLOAD ARTIFACT
+     # -----------------------------
+     - name: Upload Trivy report artifact
        uses: actions/upload-artifact@v4
        with:
-         name: merged-sbom-${{ steps.sanitize.outputs.name }}
-         path: sbom-output/merged-sbom.json
+         name: trivy-report-${{ steps.sanitize.outputs.name }}
+         path: project-src/trivy-report.json
          if-no-files-found: warn
 
