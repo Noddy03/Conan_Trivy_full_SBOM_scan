@@ -116,6 +116,18 @@ jobs:
          severity: CRITICAL,HIGH,MEDIUM
          # Removed problematic policy line
          # ignore-policy: true
+     - name: Compliance SBOM
+       run: |
+          docker run --rm \
+          -v $PWD/sbom-output:/sbom-output \
+          ghcr.io/interlynk-io/sbomqs:latest compliance \
+          --ntia /sbom-output/merged-sbom.json > sbom-output/compliance.json
+     - name: Score SBOM
+       run: |
+          docker run --rm \
+          -v $PWD/sbom-output:/sbom-output \
+          ghcr.io/interlynk-io/sbomqs:latest score \
+          /sbom-output/merged-sbom.json --json > sbom-output/score_evaluation.json
 
 
 
@@ -148,10 +160,10 @@ jobs:
      # -----------------------------
      # UPLOAD ARTIFACT
      # -----------------------------
-     - name: Upload Trivy report artifact
+     - name: Upload SBOM reports
        uses: actions/upload-artifact@v4
        with:
-         name: trivy-report-${{ steps.sanitize.outputs.name }}
-         path: project-src/trivy-report.json
-         if-no-files-found: warn
+          name: sbom-reports-${{ steps.sanitize.outputs.name }}
+          path: sbom-output/*.json
+          if-no-files-found: warn
 
