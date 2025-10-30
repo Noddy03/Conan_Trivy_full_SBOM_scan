@@ -84,16 +84,17 @@ jobs:
       # GENERATE SBOM & SCAN WITH TRIVY
       # -----------------------------
       - name: Run Trivy SBOM generation and vulnerability scan
-        uses: aquasecurity/trivy-action@0.25.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
-          input: './project-src'
+          scan-ref: ./project-src       
           format: cyclonedx
           scanners: vuln
           output: project-src/trivy-report.json
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
+
 
       # -----------------------------
       # COMPLIANCE & SCORING (SBOMQS)
