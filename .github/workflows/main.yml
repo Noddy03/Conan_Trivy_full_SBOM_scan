@@ -1,169 +1,145 @@
 name: Conan + Trivy Full SBOM Scan
 
-
-
 on:
- workflow_dispatch:
-   inputs:
-     src_repository:
-       description: 'Source Repository (e.g., user/repo)'
-       required: true
-     src_branch:
-       description: 'Branch of source repository'
-       required: false
-       default: 'main'
-     conan_repository:
-       description: 'Repository containing conanfile.py'
-       required: true
-     conan_branch:
-       description: 'Branch for Conan repository'
-       required: false
-       default: 'main'
-     src_type:
-       description: 'Project Type (java, python, dotnet, cpp, c++)'
-       required: false
-       default: 'cpp'
-
-
+  workflow_dispatch:
+    inputs:
+      src_repository:
+        description: 'Source Repository (e.g., user/repo)'
+        required: true
+      src_branch:
+        description: 'Branch of source repository'
+        required: false
+        default: 'main'
+      conan_repository:
+        description: 'Repository containing conanfile.py'
+        required: true
+      conan_branch:
+        description: 'Branch for Conan repository'
+        required: false
+        default: 'main'
+      src_type:
+        description: 'Project Type (java, python, dotnet, cpp, c++)'
+        required: false
+        default: 'cpp'
 
 jobs:
- build:
-   runs-on: ubuntu-latest
-   permissions:
-     contents: read
-     security-events: write
-     actions: read
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
 
+    steps:
+      # -----------------------------
+      # SETUP ENVIRONMENT
+      # -----------------------------
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
 
-   steps:
-     # -----------------------------
-     # SETUP ENVIRONMENT
-     # -----------------------------
-     - name: Setup Python 3.10
-       uses: actions/setup-python@v4
-       with:
-         python-version: '3.10'
+      # -----------------------------
+      # CHECKOUT REPOSITORIES
+      # -----------------------------
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.src_repository }}
+          ref: ${{ inputs.src_branch }}
+          path: project-src
 
+      - name: Checkout Conan repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.conan_repository }}
+          ref: ${{ inputs.conan_branch }}
+          path: conan-src
 
+      # -----------------------------
+      # INSTALL DEPENDENCIES
+      # -----------------------------
+      - name: Install Conan and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install conan
+          conan profile detect --force
 
-     - name: Setup Node.js 20
-       uses: actions/setup-node@v3
-       with:
-         node-version: '20'
+      # -----------------------------
+      # GENERATE CONAN LOCKFILE
+      # -----------------------------
+      - name: Generate Conan lockfile
+        run: conan lock create conanfile.py --lockfile-out=conan.lock
+        working-directory: conan-src
 
+      - name: Copy Conan lockfile to source directory
+        run: cp conan-src/conan.lock project-src/conan.lock
 
+      # -----------------------------
+      # GENERATE SBOM & SCAN WITH TRIVY
+      # -----------------------------
+      - name: Run Trivy SBOM generation and vulnerability scan
+        uses: aquasecurity/trivy-action@0.25.0
+        with:
+          scan-type: fs
+          input: './project-src'
+          format: cyclonedx
+          scanners: vuln
+          output: project-src/trivy-report.json
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH,MEDIUM
 
-     # -----------------------------
-     # CHECKOUT REPOSITORIES
-     # -----------------------------
-     - name: Checkout source repository
-       uses: actions/checkout@v4
-       with:
-         repository: ${{ inputs.src_repository }}
-         ref: ${{ inputs.src_branch }}
-         path: project-src
-
-
-
-     - name: Checkout Conan repository
-       uses: actions/checkout@v4
-       with:
-         repository: ${{ inputs.conan_repository }}
-         ref: ${{ inputs.conan_branch }}
-         path: conan-src
-
-
-
-     # -----------------------------
-     # INSTALL DEPENDENCIES
-     # -----------------------------
-     - name: Install Conan and dependencies
-       run: |
-         python -m pip install --upgrade pip
-         pip install conan
-         conan profile detect --force
-
-
-     # -----------------------------
-     # GENERATE CONAN LOCKFILE
-     # -----------------------------
-     - name: Generate Conan lockfile
-       run: |
-         conan lock create conanfile.py --lockfile-out=conan.lock
-       working-directory: conan-src
-
-
-
-     - name: Copy Conan lockfile to source directory
-       run: cp conan-src/conan.lock project-src/conan.lock
-
-
-
-     # -----------------------------
-     # GENERATE SBOM & SCAN WITH TRIVY
-     # -----------------------------
-     - name: Run Trivy SBOM generation and vulnerability scan
-       uses: aquasecurity/trivy-action@master
-       with:
-         scan-type: fs
-         input: './project-src'
-         format: cyclonedx
-         scanners: vuln
-         output: project-src/trivy-report.json
-         ignore-unfixed: true
-         vuln-type: os,library
-         severity: CRITICAL,HIGH,MEDIUM
-         # Removed problematic policy line
-         # ignore-policy: true
-     - name: Compliance SBOM
-       run: |
+      # -----------------------------
+      # COMPLIANCE & SCORING (SBOMQS)
+      # -----------------------------
+      - name: Compliance SBOM
+        run: |
           docker run --rm \
-          -v $PWD/project-src:/trivy-report \
-          ghcr.io/interlynk-io/sbomqs:latest compliance \
-          --ntia /project-src/trivy-report.json > project-src/compliance.json
-     - name: Score SBOM
-       run: |
+            -v $PWD/project-src:/project-src \
+            ghcr.io/interlynk-io/sbomqs:latest compliance \
+            --ntia /project-src/trivy-report.json > project-src/compliance.json
+
+      - name: Score SBOM
+        run: |
           docker run --rm \
-          -v $PWD/project-src:/trivy-report \
-          ghcr.io/interlynk-io/sbomqs:latest score \
-          /project-src/trivy-report.json --json > project-src/score_evaluation.json
+            -v $PWD/project-src:/project-src \
+            ghcr.io/interlynk-io/sbomqs:latest score \
+            /project-src/trivy-report.json --json > project-src/score_evaluation.json
 
+      # -----------------------------
+      # (OPTIONAL) GITHUB SECURITY TAB UPLOAD
+      # -----------------------------
+      - name: Generate SARIF report for GitHub Code Scanning
+        run: |
+          trivy fs --scanners vuln --format sarif -o project-src/trivy-results.sarif ./project-src
 
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: project-src/trivy-results.sarif
 
-     # -----------------------------
-     # (OPTIONAL) GENERATE SARIF FILE FOR GITHUB SECURITY TAB
-     # -----------------------------
-     - name: Generate SARIF report for GitHub Code Scanning
-       run: |
-         trivy fs --scanners vuln --format sarif -o project-src/trivy-results.sarif ./project-src
+      # -----------------------------
+      # SANITIZE ARTIFACT NAME
+      # -----------------------------
+      - name: Sanitize artifact name
+        id: sanitize
+        run: |
+          SAFE_NAME="${{ inputs.src_repository }}"
+          SAFE_NAME="${SAFE_NAME//\//_}"
+          echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
-
-     - name: Upload SARIF to GitHub Security tab
-       uses: github/codeql-action/upload-sarif@v3
-       with:
-         sarif_file: project-src/trivy-results.sarif
-
-
-
-     # -----------------------------
-     # SANITIZE ARTIFACT NAME
-     # -----------------------------
-     - name: Sanitize artifact name
-       id: sanitize
-       run: |
-         SAFE_NAME="${{ inputs.src_repository }}"
-         SAFE_NAME="${SAFE_NAME//\//_}"
-         echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
-
-
-     # -----------------------------
-     # UPLOAD ARTIFACT
-     # -----------------------------
-     - name: Upload SBOM reports
-       uses: actions/upload-artifact@v4
-       with:
+      # -----------------------------
+      # UPLOAD ARTIFACTS
+      # -----------------------------
+      - name: Upload SBOM reports
+        uses: actions/upload-artifact@v4
+        with:
           name: sbom-reports-${{ steps.sanitize.outputs.name }}
           path: project-src/*.json
           if-no-files-found: warn
-
