@@ -119,15 +119,15 @@ jobs:
      - name: Compliance SBOM
        run: |
           docker run --rm \
-          -v $PWD/sbom-output:/sbom-output \
+          -v $PWD/project-src:/trivy-report \
           ghcr.io/interlynk-io/sbomqs:latest compliance \
-          --ntia /sbom-output/merged-sbom.json > sbom-output/compliance.json
+          --ntia /project-src/trivy-report.json > project-src/compliance.json
      - name: Score SBOM
        run: |
           docker run --rm \
-          -v $PWD/sbom-output:/sbom-output \
+          -v $PWD/project-src:/trivy-report \
           ghcr.io/interlynk-io/sbomqs:latest score \
-          /sbom-output/merged-sbom.json --json > sbom-output/score_evaluation.json
+          /project-src/trivy-report.json --json > project-src/score_evaluation.json
 
 
 
@@ -164,6 +164,6 @@ jobs:
        uses: actions/upload-artifact@v4
        with:
           name: sbom-reports-${{ steps.sanitize.outputs.name }}
-          path: sbom-output/*.json
+          path: project-src/*.json
           if-no-files-found: warn
 
