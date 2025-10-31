@@ -44,15 +44,11 @@ jobs:
       # SETUP ENVIRONMENT
       # -----------------------------
       - name: Setup Python 3.10
-        run: |
-            echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Starting Python setup..."
-            python3 --version
         uses: actions/setup-python@v4
-          with:
-            python-version: '3.10'
+        with:
+          python-version: '3.10'
 
       - name: Setup Node.js 20
-        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Starting Node.js setup..."
         uses: actions/setup-node@v3
         with:
                 node-version: '20'
@@ -61,7 +57,6 @@ jobs:
       # CHECKOUT REPOSITORIES
       # -----------------------------
       - name: Checkout source repository
-        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Checking out source repository..."
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.src_repository }}
@@ -69,7 +64,6 @@ jobs:
           path: project-src
 
       - name: Checkout Conan repository
-        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Checking out Conan repository..."
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.conan_repository }}
@@ -104,7 +98,6 @@ jobs:
       # GENERATE SBOM & SCAN WITH TRIVY
       # -----------------------------
       - name: Run Trivy SBOM generation and vulnerability scan
-        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Running Trivy SBOM scan..."
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
@@ -144,7 +137,6 @@ jobs:
           trivy fs --scanners vuln --format sarif -o project-src/trivy-results.sarif ./project-src
 
       - name: Upload SARIF to GitHub Security tab
-        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Uploading SARIF report..."
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: project-src/trivy-results.sarif
@@ -164,7 +156,6 @@ jobs:
       # UPLOAD ARTIFACTS
       # -----------------------------
       - name: Upload SBOM reports
-        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Uploading SBOM reports..."
         uses: actions/upload-artifact@v4
         with:
           name: sbom-reports-${{ steps.sanitize.outputs.name }}
