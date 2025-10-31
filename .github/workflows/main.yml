@@ -32,14 +32,27 @@ jobs:
 
     steps:
       # -----------------------------
+      # TIMESTAMP FUNCTION
+      # -----------------------------
+      - name: Define timestamp function
+        id: timestamp
+        run: |
+          echo "TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_ENV
+          echo "Timestamp initialized at $TIMESTAMP"
+
+      # -----------------------------
       # SETUP ENVIRONMENT
       # -----------------------------
       - name: Setup Python 3.10
+        run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Starting Python setup..."
+          python3 --version
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Setup Node.js 20
+        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Starting Node.js setup..."
         uses: actions/setup-node@v3
         with:
           node-version: '20'
@@ -48,6 +61,7 @@ jobs:
       # CHECKOUT REPOSITORIES
       # -----------------------------
       - name: Checkout source repository
+        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Checking out source repository..."
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.src_repository }}
@@ -55,6 +69,7 @@ jobs:
           path: project-src
 
       - name: Checkout Conan repository
+        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Checking out Conan repository..."
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.conan_repository }}
@@ -66,6 +81,7 @@ jobs:
       # -----------------------------
       - name: Install Conan and dependencies
         run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Installing Conan..."
           python -m pip install --upgrade pip
           pip install conan
           conan profile detect --force
@@ -74,20 +90,25 @@ jobs:
       # GENERATE CONAN LOCKFILE
       # -----------------------------
       - name: Generate Conan lockfile
-        run: conan lock create conanfile.py --lockfile-out=conan.lock
+        run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Generating Conan lockfile..."
+          conan lock create conanfile.py --lockfile-out=conan.lock
         working-directory: conan-src
 
       - name: Copy Conan lockfile to source directory
-        run: cp conan-src/conan.lock project-src/conan.lock
+        run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Copying Conan lockfile..."
+          cp conan-src/conan.lock project-src/conan.lock
 
       # -----------------------------
       # GENERATE SBOM & SCAN WITH TRIVY
       # -----------------------------
       - name: Run Trivy SBOM generation and vulnerability scan
+        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Running Trivy SBOM scan..."
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
-          scan-ref: ./project-src       
+          scan-ref: ./project-src
           format: cyclonedx
           scanners: vuln
           output: project-src/trivy-report.json
@@ -95,12 +116,12 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
 
-
       # -----------------------------
       # COMPLIANCE & SCORING (SBOMQS)
       # -----------------------------
       - name: Compliance SBOM
         run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Running compliance check..."
           docker run --rm \
             -v $PWD/project-src:/project-src \
             ghcr.io/interlynk-io/sbomqs:latest compliance \
@@ -108,6 +129,7 @@ jobs:
 
       - name: Score SBOM
         run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Scoring SBOM..."
           docker run --rm \
             -v $PWD/project-src:/project-src \
             ghcr.io/interlynk-io/sbomqs:latest score \
@@ -118,9 +140,11 @@ jobs:
       # -----------------------------
       - name: Generate SARIF report for GitHub Code Scanning
         run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Generating SARIF report..."
           trivy fs --scanners vuln --format sarif -o project-src/trivy-results.sarif ./project-src
 
       - name: Upload SARIF to GitHub Security tab
+        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Uploading SARIF report..."
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: project-src/trivy-results.sarif
@@ -131,6 +155,7 @@ jobs:
       - name: Sanitize artifact name
         id: sanitize
         run: |
+          echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Sanitizing artifact name..."
           SAFE_NAME="${{ inputs.src_repository }}"
           SAFE_NAME="${SAFE_NAME//\//_}"
           echo "name=$SAFE_NAME" >> $GITHUB_OUTPUT
@@ -139,6 +164,7 @@ jobs:
       # UPLOAD ARTIFACTS
       # -----------------------------
       - name: Upload SBOM reports
+        run: echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] Uploading SBOM reports..."
         uses: actions/upload-artifact@v4
         with:
           name: sbom-reports-${{ steps.sanitize.outputs.name }}
